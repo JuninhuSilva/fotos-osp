@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Fotos OSP</title>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<script src="https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js"></script>
+<style>
+  :root{
+    --bg:#12161A; --panel:#1B2126; --panel-2:#212831; --line:#2B333B;
+    --ink:#EDF1F4; --ink-dim:#8B96A1;
+    --fiber:#2FD9C4; --cliente:#4EA3FF; --safety:#FF7A1E; --danger:#FF5C5C;
+    --mono: ui-monospace, "SF Mono", "Menlo", "Consolas", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);font-family:var(--sans);}
+  body{padding-bottom:110px;min-height:100vh;
+    background-image:radial-gradient(circle at 15% 0%, rgba(47,217,196,0.06), transparent 40%),
+                     radial-gradient(circle at 100% 20%, rgba(255,122,30,0.05), transparent 45%);}
+  .wrap{max-width:520px;margin:0 auto;padding:0 16px;}
+  header{padding:22px 16px 14px;border-bottom:1px solid var(--line);}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand-mark{width:34px;height:34px;border-radius:8px;
+    background:linear-gradient(135deg,var(--fiber),#1A6E64);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .brand h1{font-size:15px;margin:0;letter-spacing:0.04em;text-transform:uppercase;font-weight:800;}
+  .brand p{margin:1px 0 0;font-size:11.5px;color:var(--ink-dim);letter-spacing:0.03em;}
+
+  .shoot-panel{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;}
+  .shoot-btn{display:block;width:100%;padding:18px;border:none;border-radius:12px;
+    background:linear-gradient(135deg,var(--fiber),#1CB7A4);color:#08201C;
+    font-size:16px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;text-align:center;cursor:pointer;}
+  .shoot-btn:active{transform:scale(0.98);}
+  .hint{margin:10px 0 0;font-size:12px;color:var(--ink-dim);text-align:center;}
+
+  .section-title{margin:22px 0 10px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;
+    color:var(--ink-dim);font-weight:800;display:flex;justify-content:space-between;align-items:center;}
+  .section-title span{color:var(--fiber);font-family:var(--mono);}
+
+  .cards{display:flex;flex-direction:column;gap:10px;}
+  .empty-hint{padding:18px;border:1px dashed var(--line);border-radius:12px;color:var(--ink-dim);
+    font-size:13px;text-align:center;}
+  .card{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:10px;align-items:center;}
+  .card img{width:64px;height:64px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#000;}
+  .card-info{flex:1;min-width:0;}
+  .card-cat{font-size:11px;font-weight:800;letter-spacing:0.06em;text-transform:uppercase;}
+  .card-code{font-family:var(--mono);font-size:13px;margin-top:3px;word-break:break-all;}
+  .card-del{background:none;border:none;color:var(--ink-dim);font-size:22px;padding:6px 10px;cursor:pointer;}
+
+  .share-bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    background:rgba(18,22,26,0.94);backdrop-filter:blur(10px);border-top:1px solid var(--line);}
+  .share-bar .inner{max-width:520px;margin:0 auto;display:flex;gap:10px;}
+  .share-btn{flex:1;padding:15px;border:none;border-radius:12px;background:#25D366;color:#06281a;
+    font-size:15px;font-weight:800;letter-spacing:0.04em;cursor:pointer;}
+  .share-btn:disabled{opacity:0.35;}
+  .clear-btn{padding:15px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);
+    color:var(--ink-dim);font-size:13px;font-weight:700;cursor:pointer;}
+
+  /* editor (após a foto) */
+  .editor-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:40;}
+  .editor{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:92vh;overflow-y:auto;z-index:50;
+    background:var(--panel);border-radius:18px 18px 0 0;border-top:1px solid var(--line);
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom));display:none;}
+  .editor.show,.editor-overlay.show{display:block;}
+  .editor h2{margin:6px 0 12px;font-size:14px;letter-spacing:0.06em;text-transform:uppercase;}
+  .preview-box{border-radius:12px;overflow:hidden;background:#000;max-height:32vh;display:flex;
+    align-items:center;justify-content:center;}
+  .preview-box img{width:100%;max-height:32vh;object-fit:contain;}
+  .ed-label{margin:14px 0 7px;font-size:10.5px;letter-spacing:0.12em;text-transform:uppercase;
+    color:var(--ink-dim);font-weight:800;}
+  .code-chips,.cat-chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{padding:10px 13px;border-radius:999px;border:1px solid var(--line);background:var(--panel-2);
+    color:var(--ink);font-size:13px;font-family:var(--mono);cursor:pointer;}
+  .chip.active{background:var(--fiber);border-color:var(--fiber);color:#08201C;font-weight:700;}
+  .cat-chips .chip{font-family:var(--sans);font-weight:700;}
+  .cat-chips .chip.active[data-cat="instalado"]{background:var(--fiber);border-color:var(--fiber);color:#08201C;}
+  .cat-chips .chip.active[data-cat="cliente"]{background:var(--cliente);border-color:var(--cliente);color:#04182b;}
+  .cat-chips .chip.active[data-cat="apeado"]{background:var(--safety);border-color:var(--safety);color:#2b1204;}
+  .scan-status{font-size:12.5px;color:var(--ink-dim);margin:4px 0 0;}
+  .manual-row{display:none;margin-top:8px;}
+  .manual-row.show{display:flex;gap:8px;}
+  .manual-row input{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--ink);font-family:var(--mono);font-size:14px;text-transform:uppercase;}
+  .manual-row button{padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+    background:var(--panel-2);color:var(--fiber);font-weight:700;cursor:pointer;}
+  .ed-actions{display:flex;gap:10px;margin-top:18px;}
+  .ed-save{flex:1;padding:15px;border:none;border-radius:12px;background:var(--fiber);color:#08201C;
+    font-size:15px;font-weight:800;cursor:pointer;}
+  .ed-save:disabled{opacity:0.35;}
+  .ed-cancel{padding:15px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);
+    color:var(--ink-dim);font-weight:700;cursor:pointer;}
+
+  .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-80px);
+    background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:11px 18px;
+    border-radius:999px;font-size:13.5px;transition:transform .25s;z-index:99;white-space:nowrap;}
+  .toast.show{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="brand-mark"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#08201C" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3a1.5 1.5 0 0 1 1.5 1.5V18A1.5 1.5 0 0 1 20 19.5H4A1.5 1.5 0 0 1 2.5 18V9.5A1.5 1.5 0 0 1 4 8z"/><circle cx="12" cy="13.2" r="3.4"/></svg></div>
+      <div>
+        <h1>Fotos OSP</h1>
+        <p>Registo fotográfico de equipamentos</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="shoot-panel">
+    <button class="shoot-btn" id="shootBtn">&#128247; Tirar Foto</button>
+    <input type="file" id="camInput" accept="image/*" capture="environment" style="display:none">
+    <p class="hint">A foto é lida automaticamente para detetar os códigos de barras</p>
+  </div>
+
+  <div class="section-title">Fotos do lote <span id="photoCount">0</span></div>
+  <div class="cards" id="cardsList">
+    <div class="empty-hint">Ainda sem fotos. Toque em "Tirar Foto" para começar.</div>
+  </div>
+</div>
+
+<div class="share-bar">
+  <div class="inner">
+    <button class="clear-btn" id="clearBtn">Limpar</button>
+    <button class="share-btn" id="shareBtn" disabled>Partilhar no WhatsApp</button>
+  </div>
+</div>
+
+<div class="editor-overlay" id="editorOverlay"></div>
+<div class="editor" id="editor">
+  <h2>Nova foto</h2>
+  <div class="preview-box"><img id="previewImg" alt=""></div>
+
+  <div class="ed-label">Código do equipamento</div>
+  <div class="scan-status" id="scanStatus">A ler códigos...</div>
+  <div class="code-chips" id="codeChips" style="margin-top:8px"></div>
+  <div class="manual-row" id="manualRow">
+    <input id="manualInput" placeholder="Digite o código" autocapitalize="characters" autocomplete="off">
+    <button id="manualOk">Usar</button>
+  </div>
+
+  <div class="ed-label">Tipo</div>
+  <div class="cat-chips" id="catChips"></div>
+
+  <div class="ed-actions">
+    <button class="ed-cancel" id="edCancel">Cancelar</button>
+    <button class="ed-save" id="edSave" disabled>Guardar foto</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CATS = [
+  {id:'instalado', label:'Instalado',            color:'#2FD9C4', text:'#08201C'},
+  {id:'cliente',   label:'Instalado do cliente', color:'#4EA3FF', text:'#04182B'},
+  {id:'apeado',    label:'Apeado',               color:'#FF7A1E', text:'#2B1204'}
+];
+
+let photos = [];          // {id, file, url, code, catId}
+let current = null;       // {canvas, codes:[], code:null, catId}
+let lastCat = 'instalado';
+
+const $ = id => document.getElementById(id);
+const camInput = $('camInput');
+
+function showToast(msg){
+  const t = $('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- formato da tarja ---------- */
+function labelText(catId, code){
+  const cat = CATS.find(c=>c.id===catId);
+  return cat.label + '   ' + code;
+}
+
+/* ---------- carregar imagem para canvas (limita tamanho) ---------- */
+function fileToCanvas(file, maxDim){
+  return new Promise((resolve, reject)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const scale = Math.min(1, maxDim / Math.max(w, h));
+      w = Math.round(w*scale); h = Math.round(h*scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(c);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+/* ---------- leitura de códigos (ZXing) ---------- */
+function makeHints(){
+  const hints = new Map();
+  const F = ZXing.BarcodeFormat;
+  hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,
+    [F.CODE_128, F.CODE_39, F.ITF, F.EAN_13, F.QR_CODE, F.DATA_MATRIX]);
+  hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+  return hints;
+}
+
+// deteta vários códigos: lê um, tapa a faixa e tenta de novo
+function decodeAllFromCanvas(canvas){
+  const found = [];
+  const ctx = canvas.getContext('2d');
+  const reader = new ZXing.MultiFormatReader();
+  reader.setHints(makeHints());
+  for(let i=0; i<8; i++){
+    try{
+      const src = new ZXing.HTMLCanvasElementLuminanceSource(canvas);
+      const bmp = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(src));
+      const r = reader.decode(bmp);
+      const text = (r.getText()||'').trim();
+      if(text) found.push(text);
+      const pts = r.getResultPoints()||[];
+      if(!pts.length) break;
+      const ys = pts.map(p=>p.getY());
+      const yMid = (Math.min(...ys)+Math.max(...ys))/2;
+      const band = Math.max(28, canvas.height*0.05);
+      ctx.fillStyle = '#808080';
+      ctx.fillRect(0, yMid-band, canvas.width, band*2);
+      reader.reset();
+    }catch(e){ break; }
+  }
+  return found;
+}
+
+function rotateCanvas(canvas){
+  const c = document.createElement('canvas');
+  c.width = canvas.height; c.height = canvas.width;
+  const ctx = c.getContext('2d');
+  ctx.translate(c.width/2, c.height/2);
+  ctx.rotate(Math.PI/2);
+  ctx.drawImage(canvas, -canvas.width/2, -canvas.height/2);
+  return c;
+}
+
+function cloneCanvas(canvas){
+  const c = document.createElement('canvas');
+  c.width = canvas.width; c.height = canvas.height;
+  c.getContext('2d').drawImage(canvas, 0, 0);
+  return c;
+}
+
+async function scanCodes(fullCanvas){
+  const results = new Set();
+  const widths = [1400, 2000, 900];
+  for(const w of widths){
+    const scale = Math.min(1, w / fullCanvas.width);
+    const c = document.createElement('canvas');
+    c.width = Math.round(fullCanvas.width*scale);
+    c.height = Math.round(fullCanvas.height*scale);
+    c.getContext('2d').drawImage(fullCanvas, 0, 0, c.width, c.height);
+    decodeAllFromCanvas(cloneCanvas(c)).forEach(t=>results.add(t));
+    decodeAllFromCanvas(rotateCanvas(c)).forEach(t=>results.add(t));
+    if(results.size >= 2) break; // já tem opções suficientes
+    await new Promise(r=>setTimeout(r, 0)); // deixa a UI respirar
+  }
+  // filtra lixo: muito curto
+  return [...results].filter(t=>t.replace(/[^A-Za-z0-9]/g,'').length >= 6);
+}
+
+/* ---------- gravar a tarja na foto ---------- */
+function burnLabel(canvas, catId, code){
+  const cat = CATS.find(c=>c.id===catId);
+  const W = canvas.width, H = canvas.height;
+  const out = document.createElement('canvas');
+  const barH = Math.max(54, Math.round(H*0.065));
+  out.width = W; out.height = H + barH;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(canvas, 0, 0);
+  ctx.fillStyle = cat.color;
+  ctx.fillRect(0, H, W, barH);
+  ctx.fillStyle = cat.text;
+  let fs = Math.round(barH*0.44);
+  const text = labelText(catId, code);
+  ctx.textBaseline = 'middle';
+  do{
+    ctx.font = '700 ' + fs + 'px ui-monospace, Menlo, Consolas, monospace';
+    if(ctx.measureText(text).width <= W - fs) break;
+    fs -= 2;
+  }while(fs > 10);
+  ctx.fillText(text, Math.round(fs*0.6), H + barH/2);
+  return new Promise(res=>out.toBlob(b=>res(b), 'image/jpeg', 0.88));
+}
+
+/* ---------- fluxo: tirar foto ---------- */
+$('shootBtn').addEventListener('click', ()=>camInput.click());
+
+camInput.addEventListener('change', async ()=>{
+  const file = camInput.files && camInput.files[0];
+  camInput.value = '';
+  if(!file) return;
+  try{
+    const canvas = await fileToCanvas(file, 2200);
+    openEditor(canvas);
+  }catch(e){
+    showToast('Não foi possível abrir a foto');
+  }
+});
+
+function openEditor(canvas){
+  current = {canvas, codes:[], code:null, catId:lastCat};
+  $('previewImg').src = canvas.toDataURL('image/jpeg', 0.6);
+  $('codeChips').innerHTML = '';
+  $('manualRow').classList.remove('show');
+  $('manualInput').value = '';
+  $('scanStatus').textContent = 'A ler códigos...';
+  renderCats();
+  updateSave();
+  $('editorOverlay').classList.add('show');
+  $('editor').classList.add('show');
+  setTimeout(async ()=>{
+    let codes = [];
+    try{ codes = await scanCodes(canvas); }catch(e){ codes = []; }
+    if(!current) return;
+    current.codes = codes;
+    renderCodeChips();
+  }, 60);
+}
+
+function renderCodeChips(){
+  const box = $('codeChips');
+  box.innerHTML = '';
+  if(!current.codes.length){
+    $('scanStatus').textContent = 'Nenhum código detetado — aproxime mais a etiqueta ou digite abaixo.';
+  } else {
+    $('scanStatus').textContent = current.codes.length === 1
+      ? '1 código detetado — confirme:'
+      : current.codes.length + ' códigos detetados — toque no correto:';
+  }
+  current.codes.forEach(code=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (current.code===code?' active':'');
+    b.textContent = code;
+    b.onclick = ()=>{ current.code = code; renderCodeChips(); updateSave(); };
+    box.appendChild(b);
+  });
+  const manual = document.createElement('button');
+  const isManual = current.code && !current.codes.includes(current.code);
+  manual.className = 'chip' + (isManual ? ' active':'');
+  if(isManual){ manual.textContent = current.code; }
+  else { manual.innerHTML = '&#9998; Digitar'; }
+  manual.onclick = ()=>{ $('manualRow').classList.add('show'); $('manualInput').focus(); };
+  box.appendChild(manual);
+  // se só há 1 código, seleciona logo
+  if(current.codes.length === 1 && !current.code){
+    current.code = current.codes[0];
+    renderCodeChips(); updateSave();
+  }
+}
+
+$('manualOk').addEventListener('click', ()=>{
+  const v = $('manualInput').value.trim().toUpperCase();
+  if(!v) return;
+  current.code = v;
+  $('manualRow').classList.remove('show');
+  renderCodeChips(); updateSave();
+});
+
+function renderCats(){
+  const box = $('catChips');
+  box.innerHTML = '';
+  CATS.forEach(cat=>{
+    const b = document.createElement('button');
+    b.className = 'chip' + (current.catId===cat.id?' active':'');
+    b.dataset.cat = cat.id;
+    b.textContent = cat.label;
+    b.onclick = ()=>{ current.catId = cat.id; renderCats(); updateSave(); };
+    box.appendChild(b);
+  });
+}
+
+function updateSave(){
+  $('edSave').disabled = !(current && current.code && current.catId);
+}
+
+$('edCancel').addEventListener('click', closeEditor);
+$('editorOverlay').addEventListener('click', closeEditor);
+function closeEditor(){
+  current = null;
+  $('editorOverlay').classList.remove('show');
+  $('editor').classList.remove('show');
+}
+
+$('edSave').addEventListener('click', async ()=>{
+  if(!current || !current.code) return;
+  $('edSave').disabled = true;
+  $('edSave').textContent = 'A gravar...';
+  const {canvas, code, catId} = current;
+  lastCat = catId;
+  const blob = await burnLabel(canvas, catId, code);
+  const cat = CATS.find(c=>c.id===catId);
+  const fname = cat.label.toLowerCase().replace(/ /g,'_') + '-' + code + '.jpg';
+  const file = new File([blob], fname, {type:'image/jpeg'});
+  photos.push({ id: Date.now()+Math.random(), file, url: URL.createObjectURL(blob), code, catId });
+  $('edSave').textContent = 'Guardar foto';
+  closeEditor();
+  renderCards();
+  showToast('Foto guardada: ' + labelText(catId, code));
+});
+
+/* ---------- lista ---------- */
+function renderCards(){
+  $('photoCount').textContent = photos.length;
+  const list = $('cardsList');
+  if(!photos.length){
+    list.innerHTML = '<div class="empty-hint">Ainda sem fotos. Toque em "Tirar Foto" para começar.</div>';
+  } else {
+    list.innerHTML = '';
+    photos.forEach(p=>{
+      const cat = CATS.find(c=>c.id===p.catId);
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<img src="'+p.url+'" alt="">' +
+        '<div class="card-info"><div class="card-cat" style="color:'+cat.color+'">'+cat.label+'</div>' +
+        '<div class="card-code">'+p.code+'</div></div>' +
+        '<button class="card-del">&times;</button>';
+      card.querySelector('.card-del').onclick = ()=>{
+        URL.revokeObjectURL(p.url);
+        photos = photos.filter(x=>x.id!==p.id);
+        renderCards();
+      };
+      list.appendChild(card);
+    });
+  }
+  $('shareBtn').disabled = !photos.length;
+}
+
+$('clearBtn').addEventListener('click', ()=>{
+  if(!photos.length) return;
+  if(confirm('Apagar todas as fotos do lote?')){
+    photos.forEach(p=>URL.revokeObjectURL(p.url));
+    photos = [];
+    renderCards();
+  }
+});
+
+/* ---------- partilhar ---------- */
+$('shareBtn').addEventListener('click', async ()=>{
+  if(!photos.length) return;
+  const files = photos.map(p=>p.file);
+  if(navigator.canShare && navigator.canShare({files})){
+    try{
+      await navigator.share({files});
+      showToast('Partilhado');
+    }catch(e){ /* cancelado */ }
+  } else {
+    showToast('Partilha de ficheiros não suportada neste navegador');
+  }
+});
+
+window.addEventListener('beforeunload', e=>{
+  if(photos.length){ e.preventDefault(); e.returnValue = ''; }
+});
+
+renderCards();
+</script>
+</body>
+</html>
