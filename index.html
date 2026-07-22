@@ -283,6 +283,30 @@ async function scanCodes(fullCanvas){
   return [...results].filter(t=>t.replace(/[^A-Za-z0-9]/g,'').length >= 6);
 }
 
+/* ---------- gravar a tarja na foto ---------- */
+function burnLabel(canvas, catId, code){
+  const cat = CATS.find(c=>c.id===catId);
+  const W = canvas.width, H = canvas.height;
+  const out = document.createElement('canvas');
+  const barH = Math.max(54, Math.round(H*0.065));
+  out.width = W; out.height = H + barH;
+  const ctx = out.getContext('2d');
+  ctx.drawImage(canvas, 0, 0);
+  ctx.fillStyle = cat.color;
+  ctx.fillRect(0, H, W, barH);
+  ctx.fillStyle = cat.text;
+  let fs = Math.round(barH*0.44);
+  const text = labelText(catId, code);
+  ctx.textBaseline = 'middle';
+  do{
+    ctx.font = '700 ' + fs + 'px ui-monospace, Menlo, Consolas, monospace';
+    if(ctx.measureText(text).width <= W - fs) break;
+    fs -= 2;
+  }while(fs > 10);
+  ctx.fillText(text, Math.round(fs*0.6), H + barH/2);
+  return new Promise(res=>out.toBlob(b=>res(b), 'image/jpeg', 0.88));
+}
+
 /* ---------- fluxo: tirar foto ---------- */
 $('shootBtn').addEventListener('click', ()=>camInput.click());
 
@@ -388,7 +412,7 @@ $('edSave').addEventListener('click', async ()=>{
   $('edSave').textContent = 'A gravar...';
   const {canvas, code, catId} = current;
   lastCat = catId;
-  const blob = await new Promise(res=>canvas.toBlob(b=>res(b), 'image/jpeg', 0.88));
+  const blob = await burnLabel(canvas, catId, code);
   const cat = CATS.find(c=>c.id===catId);
   const fname = cat.label.toLowerCase().replace(/ /g,'_') + '-' + code + '.jpg';
   const file = new File([blob], fname, {type:'image/jpeg'});
