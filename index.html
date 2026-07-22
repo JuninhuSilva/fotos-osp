@@ -96,6 +96,11 @@
   .ed-cancel{padding:15px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);
     color:var(--ink-dim);font-weight:700;cursor:pointer;}
 
+  .caption-box{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:14px;font-family:var(--mono);font-size:13px;line-height:1.8;white-space:pre-wrap;
+    word-break:break-all;color:var(--ink);user-select:text;-webkit-user-select:text;}
+  .copy-btn{margin-top:10px;width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;
+    background:var(--panel-2);color:var(--fiber);font-size:14px;font-weight:800;cursor:pointer;}
   .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-80px);
     background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:11px 18px;
     border-radius:999px;font-size:13.5px;transition:transform .25s;z-index:99;white-space:nowrap;}
@@ -124,6 +129,10 @@
   <div class="cards" id="cardsList">
     <div class="empty-hint">Ainda sem fotos. Toque em "Tirar Foto" para começar.</div>
   </div>
+
+  <div class="section-title" style="margin-top:26px">Legenda para o WhatsApp</div>
+  <div class="caption-box" id="captionBox">Sem fotos ainda.</div>
+  <button class="copy-btn" id="copyCaption">Copiar legenda</button>
 </div>
 
 <div class="share-bar">
@@ -274,30 +283,6 @@ async function scanCodes(fullCanvas){
   return [...results].filter(t=>t.replace(/[^A-Za-z0-9]/g,'').length >= 6);
 }
 
-/* ---------- gravar a tarja na foto ---------- */
-function burnLabel(canvas, catId, code){
-  const cat = CATS.find(c=>c.id===catId);
-  const W = canvas.width, H = canvas.height;
-  const out = document.createElement('canvas');
-  const barH = Math.max(54, Math.round(H*0.065));
-  out.width = W; out.height = H + barH;
-  const ctx = out.getContext('2d');
-  ctx.drawImage(canvas, 0, 0);
-  ctx.fillStyle = cat.color;
-  ctx.fillRect(0, H, W, barH);
-  ctx.fillStyle = cat.text;
-  let fs = Math.round(barH*0.44);
-  const text = labelText(catId, code);
-  ctx.textBaseline = 'middle';
-  do{
-    ctx.font = '700 ' + fs + 'px ui-monospace, Menlo, Consolas, monospace';
-    if(ctx.measureText(text).width <= W - fs) break;
-    fs -= 2;
-  }while(fs > 10);
-  ctx.fillText(text, Math.round(fs*0.6), H + barH/2);
-  return new Promise(res=>out.toBlob(b=>res(b), 'image/jpeg', 0.88));
-}
-
 /* ---------- fluxo: tirar foto ---------- */
 $('shootBtn').addEventListener('click', ()=>camInput.click());
 
@@ -403,7 +388,7 @@ $('edSave').addEventListener('click', async ()=>{
   $('edSave').textContent = 'A gravar...';
   const {canvas, code, catId} = current;
   lastCat = catId;
-  const blob = await burnLabel(canvas, catId, code);
+  const blob = await new Promise(res=>canvas.toBlob(b=>res(b), 'image/jpeg', 0.88));
   const cat = CATS.find(c=>c.id===catId);
   const fname = cat.label.toLowerCase().replace(/ /g,'_') + '-' + code + '.jpg';
   const file = new File([blob], fname, {type:'image/jpeg'});
@@ -415,8 +400,17 @@ $('edSave').addEventListener('click', async ()=>{
 });
 
 /* ---------- lista ---------- */
+function buildCaption(){
+  return photos.map(p=>labelText(p.catId, p.code)).join('\n');
+}
+
+function renderCaption(){
+  $('captionBox').textContent = photos.length ? buildCaption() : 'Sem fotos ainda.';
+}
+
 function renderCards(){
   $('photoCount').textContent = photos.length;
+  renderCaption();
   const list = $('cardsList');
   if(!photos.length){
     list.innerHTML = '<div class="empty-hint">Ainda sem fotos. Toque em "Tirar Foto" para começar.</div>';
@@ -456,11 +450,25 @@ $('shareBtn').addEventListener('click', async ()=>{
   const files = photos.map(p=>p.file);
   if(navigator.canShare && navigator.canShare({files})){
     try{
-      await navigator.share({files});
+      await navigator.share({files, text: buildCaption()});
       showToast('Partilhado');
     }catch(e){ /* cancelado */ }
   } else {
     showToast('Partilha de ficheiros não suportada neste navegador');
+  }
+});
+
+$('copyCaption').addEventListener('click', async ()=>{
+  if(!photos.length) return;
+  const text = buildCaption();
+  try{
+    await navigator.clipboard.writeText(text);
+    showToast('Legenda copiada');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    showToast('Legenda copiada');
   }
 });
 
