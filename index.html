@@ -101,6 +101,15 @@
     word-break:break-all;color:var(--ink);user-select:text;-webkit-user-select:text;}
   .copy-btn{margin-top:10px;width:100%;padding:13px;border:1px solid var(--line);border-radius:12px;
     background:var(--panel-2);color:var(--fiber);font-size:14px;font-weight:800;cursor:pointer;}
+  .seq-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);display:none;z-index:60;}
+  .seq-sheet{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:92vh;overflow-y:auto;z-index:61;
+    background:var(--panel);border-radius:18px 18px 0 0;border-top:1px solid var(--line);
+    padding:14px 16px calc(20px + env(safe-area-inset-bottom));display:none;}
+  .seq-overlay.show,.seq-sheet.show{display:block;}
+  .seq-sheet h2{margin:6px 0 4px;font-size:14px;letter-spacing:0.06em;text-transform:uppercase;}
+  .seq-progress{margin:0 0 10px;font-size:12px;color:var(--fiber);font-weight:800;letter-spacing:0.04em;}
+  .seq-caption{margin-top:12px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+    padding:12px;font-family:var(--mono);font-size:14px;color:var(--ink);}
   .toast{position:fixed;top:14px;left:50%;transform:translateX(-50%) translateY(-80px);
     background:var(--panel-2);border:1px solid var(--line);color:var(--ink);padding:11px 18px;
     border-radius:999px;font-size:13.5px;transition:transform .25s;z-index:99;white-space:nowrap;}
@@ -138,7 +147,20 @@
 <div class="share-bar">
   <div class="inner">
     <button class="clear-btn" id="clearBtn">Limpar</button>
-    <button class="share-btn" id="shareBtn" disabled>Partilhar no WhatsApp</button>
+    <button class="share-btn" id="shareBtn" disabled>Enviar fotos (uma a uma)</button>
+  </div>
+</div>
+
+<div class="seq-overlay" id="seqOverlay"></div>
+<div class="seq-sheet" id="seqSheet">
+  <h2>Enviar fotos</h2>
+  <p class="seq-progress" id="seqProgress">Foto 1 de 1</p>
+  <div class="preview-box"><img id="seqImg" alt=""></div>
+  <div class="seq-caption" id="seqCaption"></div>
+  <p class="hint" style="margin-top:6px">Toque em Partilhar, escolha o WhatsApp e o grupo. A legenda já vai preenchida.</p>
+  <div class="ed-actions">
+    <button class="ed-cancel" id="seqClose">Fechar</button>
+    <button class="ed-save" id="seqShareBtn">&#128241; Partilhar esta foto</button>
   </div>
 </div>
 
@@ -283,30 +305,6 @@ async function scanCodes(fullCanvas){
   return [...results].filter(t=>t.replace(/[^A-Za-z0-9]/g,'').length >= 6);
 }
 
-/* ---------- gravar a tarja na foto ---------- */
-function burnLabel(canvas, catId, code){
-  const cat = CATS.find(c=>c.id===catId);
-  const W = canvas.width, H = canvas.height;
-  const out = document.createElement('canvas');
-  const barH = Math.max(54, Math.round(H*0.065));
-  out.width = W; out.height = H + barH;
-  const ctx = out.getContext('2d');
-  ctx.drawImage(canvas, 0, 0);
-  ctx.fillStyle = cat.color;
-  ctx.fillRect(0, H, W, barH);
-  ctx.fillStyle = cat.text;
-  let fs = Math.round(barH*0.44);
-  const text = labelText(catId, code);
-  ctx.textBaseline = 'middle';
-  do{
-    ctx.font = '700 ' + fs + 'px ui-monospace, Menlo, Consolas, monospace';
-    if(ctx.measureText(text).width <= W - fs) break;
-    fs -= 2;
-  }while(fs > 10);
-  ctx.fillText(text, Math.round(fs*0.6), H + barH/2);
-  return new Promise(res=>out.toBlob(b=>res(b), 'image/jpeg', 0.88));
-}
-
 /* ---------- fluxo: tirar foto ---------- */
 $('shootBtn').addEventListener('click', ()=>camInput.click());
 
@@ -412,7 +410,7 @@ $('edSave').addEventListener('click', async ()=>{
   $('edSave').textContent = 'A gravar...';
   const {canvas, code, catId} = current;
   lastCat = catId;
-  const blob = await burnLabel(canvas, catId, code);
+  const blob = await new Promise(res=>canvas.toBlob(b=>res(b), 'image/jpeg', 0.88));
   const cat = CATS.find(c=>c.id===catId);
   const fname = cat.label.toLowerCase().replace(/ /g,'_') + '-' + code + '.jpg';
   const file = new File([blob], fname, {type:'image/jpeg'});
@@ -468,17 +466,53 @@ $('clearBtn').addEventListener('click', ()=>{
   }
 });
 
-/* ---------- partilhar ---------- */
-$('shareBtn').addEventListener('click', async ()=>{
+/* ---------- partilhar: uma foto de cada vez ---------- */
+let seqIndex = 0;
+
+$('shareBtn').addEventListener('click', ()=>{
   if(!photos.length) return;
-  const files = photos.map(p=>p.file);
-  if(navigator.canShare && navigator.canShare({files})){
+  seqIndex = 0;
+  openSeq();
+});
+
+function openSeq(){
+  const p = photos[seqIndex];
+  if(!p){ closeSeq(); return; }
+  $('seqProgress').textContent = 'Foto ' + (seqIndex+1) + ' de ' + photos.length;
+  $('seqImg').src = p.url;
+  $('seqCaption').textContent = labelText(p.catId, p.code);
+  $('seqShareBtn').textContent = '📤 Partilhar esta foto';
+  $('seqShareBtn').disabled = false;
+  $('seqOverlay').classList.add('show');
+  $('seqSheet').classList.add('show');
+}
+
+function closeSeq(){
+  $('seqOverlay').classList.remove('show');
+  $('seqSheet').classList.remove('show');
+}
+
+$('seqClose').addEventListener('click', closeSeq);
+$('seqOverlay').addEventListener('click', closeSeq);
+
+$('seqShareBtn').addEventListener('click', async ()=>{
+  const p = photos[seqIndex];
+  if(!p) return;
+  const caption = labelText(p.catId, p.code);
+  if(navigator.canShare && navigator.canShare({files:[p.file]})){
     try{
-      await navigator.share({files, text: buildCaption()});
-      showToast('Partilhado');
-    }catch(e){ /* cancelado */ }
+      await navigator.share({files:[p.file], text: caption});
+    }catch(e){ return; /* cancelado: fica na mesma foto */ }
   } else {
     showToast('Partilha de ficheiros não suportada neste navegador');
+    return;
+  }
+  seqIndex++;
+  if(seqIndex < photos.length){
+    openSeq();
+  } else {
+    closeSeq();
+    showToast('Todas as fotos foram enviadas');
   }
 });
 
